@@ -1,0 +1,147 @@
+"""Live application loop: capture → detect → render → display."""
+
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass
+
+import cv2
+import numpy as np
+
+from projland.calibration import CALIBRATION_IDS, Calibration, CalibrationPattern, solve_calibration
+from projland.markers import MarkerDetector
+from projland.render import Renderer, Scene, default_scene
+
+
+PROJECTOR_WINDOW = "projland — projector"
+DEBUG_WINDOW = "projland — camera debug"
+
+
+@dataclass
+class AppConfig:
+    camera_index: int = 0
+    projector_size: tuple[int, int] = (1280, 800)
+    calibration_marker_px: int = 180
+    calibration_margin_px: int = 80
+    fullscreen: bool = True
+    show_debug: bool = True
+    recalibrate_every: float = 0.0  # seconds; 0 = only once
+
+
+def _make_pattern(cfg: AppConfig) -> CalibrationPattern:
+    return CalibrationPattern(
+        projector_size=cfg.projector_size,
+        marker_size_px=cfg.calibration_marker_px,
+        margin_px=cfg.calibration_margin_px,
+    )
+
+
+def calibrate_with_camera(
+    cap: cv2.VideoCapture,
+    detector: MarkerDetector,
+    pattern: CalibrationPattern,
+    projector_window: str,
+    settle_frames: int = 10,
+    timeout_sec: float = 30.0,
+) -> Calibration | None:
+    """Display the calibration pattern; wait for the camera to see all 4
+    markers; solve homography."""
+    pattern_img = pattern.render()
+    cv2.imshow(projector_window, pattern_img)
+    cv2.waitKey(1)
+
+    deadline = time.time() + timeout_sec
+    last: Calibration | None = None
+    consecutive_good = 0
+
+    while time.time() < deadline:
+        ok, frame = cap.read()
+        if not ok:
+            time.sleep(0.05)
+            continue
+        markers = detector.detect(frame)
+        cal = solve_calibration(pattern, markers, (frame.shape[1], frame.shape[0]))
+        if cal is not None:
+            last = cal
+            consecutive_good += 1
+            if consecutive_good >= settle_frames:
+                return cal
+        else:
+            consecutive_good = 0
+        cv2.waitKey(15)
+    return last
+
+
+def run(cfg: AppConfig) -> int:
+    cap = cv2.VideoCapture(cfg.camera_index)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
+    if not cap.isOpened():
+        print(f"Could not open camera {cfg.camera_index}")
+        return 2
+
+    detector = MarkerDetector()
+    pattern = _make_pattern(cfg)
+    renderer = Renderer(projector_size=cfg.projector_size)
+
+    cv2.namedWindow(PROJECTOR_WINDOW, cv2.WINDOW_NORMAL)
+    if cfg.fullscreen:
+        cv2.setWindowProperty(PROJECTOR_WINDOW, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+    if cfg.show_debug:
+        cv2.namedWindow(DEBUG_WINDOW, cv2.WINDOW_NORMAL)
+
+    print("Calibrating — please hold still while the corners are detected…")
+    calibration = calibrate_with_camera(cap, detector, pattern, PROJECTOR_WINDOW)
+    if calibration is None:
+        print("Calibration failed. Aborting.")
+        cap.release()
+        cv2.destroyAllWindows()
+        return 3
+    print("Calibrated.")
+
+    skip_ids = set(pattern.ids)  # don't decorate calibration markers themselves
+    scene: Scene = default_scene(skip_ids=skip_ids)
+
+    last_cal_t = time.time()
+    t0 = time.time()
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                continue
+            markers = detector.detect(frame)
+            t = time.time() - t0
+            content_markers = [m for m in markers if m.id not in skip_ids]
+            projector_img = renderer.render(scene, content_markers, calibration, t=t)
+            cv2.imshow(PROJECTOR_WINDOW, projector_img)
+
+            if cfg.show_debug:
+                debug = frame.copy()
+                if markers:
+                    corners_list = [m.corners.reshape(1, 4, 2) for m in markers]
+                    ids_arr = np.array([[m.id] for m in markers], dtype=np.int32)
+                    cv2.aruco.drawDetectedMarkers(debug, corners_list, ids_arr)
+                cv2.imshow(DEBUG_WINDOW, debug)
+
+            # opportunistic recalibration
+            if cfg.recalibrate_every > 0 and (time.time() - last_cal_t) > cfg.recalibrate_every:
+                cal_markers = [m for m in markers if m.id in pattern.ids]
+                new_cal = solve_calibration(
+                    pattern, cal_markers, (frame.shape[1], frame.shape[0])
+                )
+                if new_cal is not None:
+                    calibration = new_cal
+                    last_cal_t = time.time()
+
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q") or key == 27:
+                break
+            if key == ord("c"):
+                # force recalibrate
+                new_cal = calibrate_with_camera(cap, detector, pattern, PROJECTOR_WINDOW)
+                if new_cal is not None:
+                    calibration = new_cal
+                    print("Recalibrated.")
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
+    return 0

@@ -1,0 +1,28 @@
+[project]
+name = "projland"
+version = "0.1.0"
+description = "Dynamic-land-style projector + webcam AR around ArUco markers"
+readme = "README.md"
+authors = [
+    { name = "Ben Dean", email = "benneb123@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.0",
+    "opencv-contrib-python>=4.10",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+]
+
+[project.scripts]
+projland = "projland.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.10.6,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
