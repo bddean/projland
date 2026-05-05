@@ -50,6 +50,78 @@ def _list_cameras(max_index: int, urls: list[str]) -> int:
     return 0 if found else 1
 
 
+def _marker_sheet(
+    *,
+    ids_arg: str,
+    paper: str,
+    dpi: int,
+    marker_in: float,
+    cols: int,
+    output: str,
+) -> int:
+    import numpy as np
+    from projland.letters import ARCUO_TO_LETTER
+    from projland.markers import render_marker
+
+    if ids_arg == "letters":
+        ids = sorted(ARCUO_TO_LETTER.keys())
+    else:
+        try:
+            ids = [int(x) for x in ids_arg.split(",") if x.strip()]
+        except ValueError:
+            print(f"--ids must be 'letters' or a comma list of ints, got {ids_arg!r}")
+            return 2
+
+    page_inches = {"letter": (8.5, 11.0), "a4": (8.27, 11.69)}[paper]
+    page_w = int(page_inches[0] * dpi)
+    page_h = int(page_inches[1] * dpi)
+    marker_px = int(round(marker_in * dpi))
+    margin = int(0.5 * dpi)  # 1/2" margin
+
+    # Cell size includes label space below the marker.
+    label_h = int(0.45 * dpi)
+    cell_w = (page_w - 2 * margin) // cols
+    rows = -(-len(ids) // cols)  # ceil
+    cell_h = marker_px + label_h + int(0.2 * dpi)
+
+    if margin + rows * cell_h > page_h:
+        max_rows = (page_h - 2 * margin) // cell_h
+        print(
+            f"Warning: only {max_rows * cols} of {len(ids)} markers fit at this "
+            f"size; reduce --marker-in or --ids."
+        )
+
+    page = np.full((page_h, page_w, 3), 255, dtype=np.uint8)
+    for i, marker_id in enumerate(ids):
+        r, c = divmod(i, cols)
+        cx = margin + c * cell_w + cell_w // 2
+        cy = margin + r * cell_h + marker_px // 2
+        if cy + marker_px // 2 > page_h - margin:
+            break
+        m = cv2.cvtColor(render_marker(marker_id, marker_px), cv2.COLOR_GRAY2BGR)
+        x0 = cx - marker_px // 2
+        y0 = cy - marker_px // 2
+        page[y0 : y0 + marker_px, x0 : x0 + marker_px] = m
+
+        letter = ARCUO_TO_LETTER.get(marker_id, "")
+        label = f"{marker_id}" + (f"  '{letter}'" if letter else "")
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        scale = dpi / 100.0 * 0.6
+        thickness = max(1, int(dpi / 150))
+        (tw, th), _ = cv2.getTextSize(label, font, scale, thickness)
+        tx = cx - tw // 2
+        ty = y0 + marker_px + th + int(0.08 * dpi)
+        cv2.putText(page, label, (tx, ty), font, scale, (0, 0, 0), thickness, cv2.LINE_AA)
+
+    cv2.imwrite(output, page)
+    print(
+        f"Wrote {output}: {page_w}x{page_h}px "
+        f"({page_inches[0]:.2f}x{page_inches[1]:.2f}in @ {dpi} dpi), "
+        f"{min(len(ids), rows * cols)} markers, side {marker_in}in"
+    )
+    return 0
+
+
 def _camera_arg(value: str) -> int | str:
     """Parse --camera: int → USB device index; otherwise pass through as URL/path."""
     try:
@@ -108,6 +180,25 @@ def main(argv: list[str] | None = None) -> int:
     p_mark.add_argument("id", type=int)
     p_mark.add_argument("--size", type=int, default=600)
     p_mark.add_argument("-o", "--output", default=None)
+
+    p_sheet = sub.add_parser(
+        "marker-sheet",
+        help="Render a printable page of multiple ArUco markers with labels",
+    )
+    p_sheet.add_argument(
+        "--ids", default="letters",
+        help="Comma-separated ids, or 'letters' for the kit letter set (default)",
+    )
+    p_sheet.add_argument("--paper", default="letter", choices=["letter", "a4"])
+    p_sheet.add_argument("--dpi", type=int, default=300)
+    p_sheet.add_argument(
+        "--marker-in", type=float, default=2.0,
+        help="Marker side length in inches (default 2.0)",
+    )
+    p_sheet.add_argument(
+        "--cols", type=int, default=3, help="Number of columns (default 3)",
+    )
+    p_sheet.add_argument("-o", "--output", default="markers.png")
 
     p_demo = sub.add_parser("demo", help="Run the synthetic headless demo to a video file")
     p_demo.add_argument("-o", "--output", default="demo.mp4")
@@ -188,6 +279,16 @@ def main(argv: list[str] | None = None) -> int:
         cv2.imwrite(out, img)
         print(f"Wrote {out}")
         return 0
+
+    if args.cmd == "marker-sheet":
+        return _marker_sheet(
+            ids_arg=args.ids,
+            paper=args.paper,
+            dpi=args.dpi,
+            marker_in=args.marker_in,
+            cols=args.cols,
+            output=args.output,
+        )
 
     if args.cmd == "demo":
         from projland.demo_video import write_demo_video
