@@ -27,40 +27,68 @@ PROJECTOR_WINDOW = "projland — projector"
 DEBUG_WINDOW = "projland — camera debug"
 
 
-def _place_projector_window(window: str, cfg: "AppConfig") -> None:
-    """Move the projector window onto the chosen display before fullscreen."""
+def _resolve_projector_target(cfg: "AppConfig"):
+    """Return the Display we should put the projector window on, or None."""
     if cfg.projector == "off":
-        return
+        return None
     from projland.displays import list_displays, pick_projector
 
     displays = list_displays()
     if not displays:
-        return  # not on macOS or Quartz unavailable; let user drag manually
-    target = None
+        return None
     if cfg.projector == "auto":
         target = pick_projector(displays)
         if target is None:
             print(
                 "projland: couldn't auto-pick a projector display "
-                f"(have {len(displays)}); drag the window manually or pass --projector <id>"
+                f"(have {len(displays)}); drag manually or pass --projector <id>"
             )
-            return
-    elif cfg.projector == "main":
-        target = next((d for d in displays if d.is_main), None)
-    else:
-        try:
-            wanted = int(cfg.projector)
-        except ValueError:
-            print(f"projland: --projector must be auto/off/main/<id>, got {cfg.projector!r}")
-            return
-        target = next((d for d in displays if d.id == wanted), None)
-        if target is None:
-            print(f"projland: no display with id {wanted}")
-            return
+        return target
+    if cfg.projector == "main":
+        return next((d for d in displays if d.is_main), None)
+    try:
+        wanted = int(cfg.projector)
+    except ValueError:
+        print(f"projland: --projector must be auto/off/main/<id>, got {cfg.projector!r}")
+        return None
+    target = next((d for d in displays if d.id == wanted), None)
+    if target is None:
+        print(f"projland: no display with id {wanted}")
+    return target
+
+
+def _place_projector_window(window: str, cfg: "AppConfig") -> None:
+    """Move the projector window onto the chosen display, then fullscreen.
+
+    macOS-safe order: force the window into existence with a real imshow,
+    pump the event loop, THEN move/resize/fullscreen, pumping between each.
+    """
+    target = _resolve_projector_target(cfg)
+    if target is None:
+        # Still apply fullscreen on whatever display we're on.
+        if cfg.fullscreen:
+            cv2.setWindowProperty(window, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        return
 
     print(f"projland: placing projector window on {target.label}")
+
+    # Ensure the NSWindow actually exists before moving it.
+    placeholder = np.zeros((target.height, target.width, 3), dtype=np.uint8)
+    cv2.imshow(window, placeholder)
+    cv2.waitKey(100)
+
+    # Move while in NORMAL mode — fullscreen captures the *current* display.
     cv2.moveWindow(window, target.x, target.y)
+    cv2.waitKey(50)
     cv2.resizeWindow(window, target.width, target.height)
+    cv2.waitKey(50)
+    # Re-show so the window paints at the new location before fullscreen flips.
+    cv2.imshow(window, placeholder)
+    cv2.waitKey(100)
+
+    if cfg.fullscreen:
+        cv2.setWindowProperty(window, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        cv2.waitKey(50)
 
 
 @dataclass
@@ -147,8 +175,6 @@ def run(cfg: AppConfig) -> int:
         renderer = Renderer(projector_size=cfg.projector_size)
         cv2.namedWindow(PROJECTOR_WINDOW, cv2.WINDOW_NORMAL)
         _place_projector_window(PROJECTOR_WINDOW, cfg)
-        if cfg.fullscreen:
-            cv2.setWindowProperty(PROJECTOR_WINDOW, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         print("Calibrating — please hold still while the corners are detected…")
         calibration = calibrate_with_camera(cap, detector, pattern, PROJECTOR_WINDOW)
         if calibration is None:
