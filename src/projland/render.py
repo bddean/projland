@@ -348,6 +348,36 @@ class Sparkles:
 
 
 @dataclass
+class Radar:
+    """A sweeping radar line emanating from the centroid of all markers."""
+
+    period_sec: float = 3.0
+    length_scale: float = 1.5  # of the bounding-box diagonal
+    thickness: int = 2
+    color: tuple[int, int, int] = (180, 220, 255)
+    skip_ids: set[int] = field(default_factory=set)
+
+    def draw(self, canvas, markers, cal, t):
+        active = [m for m in markers if m.id not in self.skip_ids]
+        if len(active) < 2:
+            return
+        centers = np.array([marker_center_in_projector(m, cal) for m in active])
+        cx, cy = centers.mean(axis=0)
+        bbox_min = centers.min(axis=0)
+        bbox_max = centers.max(axis=0)
+        diag = float(np.linalg.norm(bbox_max - bbox_min))
+        r = max(40.0, diag * self.length_scale / 2)
+        phase = (t % self.period_sec) / self.period_sec
+        ang = phase * 2 * math.pi
+        x = int(cx + r * math.cos(ang))
+        y = int(cy + r * math.sin(ang))
+        cv2.line(
+            canvas, (int(cx), int(cy)), (x, y),
+            self.color, self.thickness, cv2.LINE_AA,
+        )
+
+
+@dataclass
 class Glow:
     """Apply a Gaussian blur over the rendered canvas, then add it back, to
     give a bloom effect. Should be added LAST in a scene."""
@@ -406,6 +436,7 @@ def default_scene(skip_ids: set[int] | None = None) -> Scene:
     return Scene(
         effects=[
             Trail(skip_ids=skip_ids),
+            Radar(skip_ids=skip_ids),
             Constellations(skip_ids=skip_ids, max_distance_px=600),
             Halo(skip_ids=skip_ids),
             Pulse(skip_ids=skip_ids),
