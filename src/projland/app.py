@@ -64,31 +64,39 @@ def _place_projector_window(window: str, cfg: "AppConfig") -> None:
     pump the event loop, THEN move/resize/fullscreen, pumping between each.
     """
     target = _resolve_projector_target(cfg)
-    if target is None:
-        # Still apply fullscreen on whatever display we're on.
-        if cfg.fullscreen:
-            cv2.setWindowProperty(window, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-        return
 
-    print(f"projland: placing projector window on {target.label}")
+    if cfg.fullscreen:
+        win_w, win_h = (target.width, target.height) if target else cfg.projector_size
+    else:
+        win_w, win_h = cfg.window_size
+    placeholder = np.zeros((win_h, win_w, 3), dtype=np.uint8)
 
-    # Ensure the NSWindow actually exists before moving it.
-    placeholder = np.zeros((target.height, target.width, 3), dtype=np.uint8)
+    # Force the NSWindow into existence before any move/resize.
     cv2.imshow(window, placeholder)
     cv2.waitKey(100)
 
-    # Move while in NORMAL mode — fullscreen captures the *current* display.
-    cv2.moveWindow(window, target.x, target.y)
+    if target is not None:
+        print(
+            f"projland: placing projector window on {target.label} "
+            f"({'fullscreen' if cfg.fullscreen else f'{win_w}x{win_h}'})"
+        )
+        # Center smaller windows on the target display; otherwise top-left.
+        if cfg.fullscreen:
+            x, y = target.x, target.y
+        else:
+            x = target.x + max(0, (target.width - win_w) // 2)
+            y = target.y + max(0, (target.height - win_h) // 2)
+        cv2.moveWindow(window, x, y)
+        cv2.waitKey(50)
+    cv2.resizeWindow(window, win_w, win_h)
     cv2.waitKey(50)
-    cv2.resizeWindow(window, target.width, target.height)
-    cv2.waitKey(50)
-    # Re-show so the window paints at the new location before fullscreen flips.
     cv2.imshow(window, placeholder)
     cv2.waitKey(100)
 
     if cfg.fullscreen:
         cv2.setWindowProperty(window, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         cv2.waitKey(50)
+    # Non-fullscreen: WINDOW_NORMAL leaves it user-resizable.
 
 
 @dataclass
@@ -103,6 +111,7 @@ class AppConfig:
     preview_mode: bool = False  # if True, skip projector — overlay on camera
     preset: str = "full"
     projector: str = "auto"  # "auto" | "off" | "main" | str(display_id)
+    window_size: tuple[int, int] = (960, 600)  # used only when non-fullscreen
 
 
 def _make_pattern(cfg: AppConfig) -> CalibrationPattern:

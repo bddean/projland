@@ -72,6 +72,11 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--projector-width", type=int, default=1280)
     p_run.add_argument("--projector-height", type=int, default=800)
     p_run.add_argument("--no-fullscreen", action="store_true")
+    p_run.add_argument(
+        "--window-size",
+        default="960x600",
+        help="WxH for the projector window when --no-fullscreen (default 960x600)",
+    )
     p_run.add_argument("--no-debug", action="store_true")
     p_run.add_argument("--recalibrate-every", type=float, default=0.0)
     p_run.add_argument(
@@ -148,6 +153,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.cmd == "run":
+        try:
+            ww, wh = (int(x) for x in args.window_size.lower().split("x"))
+        except ValueError:
+            print(f"--window-size must be WxH, got {args.window_size!r}")
+            return 2
         cfg = AppConfig(
             camera_index=args.camera,
             projector_size=(args.projector_width, args.projector_height),
@@ -157,6 +167,7 @@ def main(argv: list[str] | None = None) -> int:
             preview_mode=args.preview,
             preset=args.preset,
             projector=args.projector,
+            window_size=(ww, wh),
         )
         return run(cfg)
 
