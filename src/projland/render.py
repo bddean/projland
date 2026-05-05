@@ -321,6 +321,33 @@ class SpelledWord:
 
 
 @dataclass
+class Sparkles:
+    """Rotating colored particles around each marker."""
+
+    count: int = 8
+    radius_scale: float = 1.9
+    particle_radius: int = 5
+    angular_speed: float = 1.2  # radians/sec
+    skip_ids: set[int] = field(default_factory=set)
+
+    def draw(self, canvas, markers, cal, t):
+        for m in markers:
+            if m.id in self.skip_ids:
+                continue
+            corners = marker_corners_in_projector(m, cal)
+            center = corners.mean(axis=0)
+            side = float(np.linalg.norm(corners[1] - corners[0]))
+            r = side * self.radius_scale / 2
+            base_angle = t * self.angular_speed + m.id * 0.37
+            color = color_for_id(m.id)
+            for i in range(self.count):
+                ang = base_angle + i * (2 * math.pi / self.count)
+                x = int(center[0] + r * math.cos(ang))
+                y = int(center[1] + r * math.sin(ang))
+                cv2.circle(canvas, (x, y), self.particle_radius, color, -1, cv2.LINE_AA)
+
+
+@dataclass
 class Glow:
     """Apply a Gaussian blur over the rendered canvas, then add it back, to
     give a bloom effect. Should be added LAST in a scene."""
@@ -382,6 +409,7 @@ def default_scene(skip_ids: set[int] | None = None) -> Scene:
             Constellations(skip_ids=skip_ids, max_distance_px=600),
             Halo(skip_ids=skip_ids),
             Pulse(skip_ids=skip_ids),
+            Sparkles(skip_ids=skip_ids),
             OrientationArrow(skip_ids=skip_ids),
             LetterLabel(skip_ids=skip_ids),
             SpelledWord(skip_ids=skip_ids),

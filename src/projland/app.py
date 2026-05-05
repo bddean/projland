@@ -15,6 +15,8 @@ from projland.calibration import (
     identity_calibration,
     solve_calibration,
 )
+from projland.events import MarkerEvents
+from projland.letters import ARCUO_TO_LETTER
 from projland.markers import MarkerDetector
 from projland.render import Renderer, Scene, default_scene
 from projland.tracking import MarkerSmoother
@@ -122,6 +124,17 @@ def run(cfg: AppConfig) -> int:
 
     scene: Scene = default_scene(skip_ids=skip_ids)
 
+    def _describe(m):
+        letter = ARCUO_TO_LETTER.get(m.id)
+        if letter is None:
+            return f"marker {m.id}"
+        return f"letter {letter} (id {m.id})"
+
+    events = MarkerEvents(
+        on_arrive=lambda m: print(f"+ {_describe(m)}", flush=True),
+        on_depart=lambda mid: print(f"- marker {mid}", flush=True),
+    )
+
     last_cal_t = time.time()
     t0 = time.time()
     try:
@@ -133,6 +146,7 @@ def run(cfg: AppConfig) -> int:
             markers = smoother.update(markers)
             t = time.time() - t0
             content_markers = [m for m in markers if m.id not in skip_ids]
+            events.update(content_markers)
             projector_img = renderer.render(scene, content_markers, calibration, t=t)
             if cfg.preview_mode:
                 # composite projector_img on top of the camera frame
