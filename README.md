@@ -95,11 +95,34 @@ asserts a halo drawn for a detected marker actually shows up centered on that
 marker in the camera's view of the projection — i.e., the calibration is
 correct end-to-end.
 
+## Presets
+
+Pick a scene preset for any of the rendering commands with `--preset`:
+
+* `full` — every effect: trails, radar, constellations, halos, pulses,
+  sparkles, orientation arrows, letter labels, spelled words, glow
+* `minimal` — just halos and ID labels
+* `spelling` — letter labels + spelled-word text
+* `stars` — constellations + sparkles + heavy glow
+
+Examples:
+
+```bash
+uv run projland snapshot --preset stars -o stars.png
+uv run projland test-image input.png --preset minimal -o out.png
+uv run projland run --preview --preset spelling
+```
+
 ## Layout
 
 - `projland.markers` — ArUco wrappers
 - `projland.calibration` — projected-fiducial homography solver
+- `projland.tracking` — EMA smoother for marker positions
+- `projland.events` — debounced arrival/departure events
+- `projland.letters` — ArUco-id → letter mapping (ported from your printed kit)
+- `projland.spelling` — group letter markers into words
 - `projland.render` — Scene/Renderer + composable Effects
+- `projland.presets` — named scene builders
 - `projland.synthetic` — virtual camera + projector for headless tests
 - `projland.app` — live app loop
 - `projland.cli` — `projland` CLI entry point

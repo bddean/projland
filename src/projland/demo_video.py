@@ -14,7 +14,8 @@ import numpy as np
 
 from projland.calibration import CALIBRATION_IDS, CalibrationPattern, solve_calibration
 from projland.markers import MarkerDetector
-from projland.render import Renderer, default_scene
+from projland.presets import build as build_preset
+from projland.render import Renderer
 from projland.synthetic import PrintedMarker, SyntheticWorld
 
 
@@ -61,7 +62,7 @@ def build_world(t: float) -> SyntheticWorld:
     return world, pat
 
 
-def write_demo_video(output: Path, frames: int = 120, fps: int = 30) -> None:
+def write_demo_video(output: Path, frames: int = 120, fps: int = 30, preset: str = "full") -> None:
     detector = MarkerDetector()
 
     world, pat = build_world(0.0)
@@ -79,7 +80,7 @@ def write_demo_video(output: Path, frames: int = 120, fps: int = 30) -> None:
     writer = cv2.VideoWriter(str(output), fourcc, fps, (cw, ch))
 
     skip_ids = set(pat.ids)
-    scene = default_scene(skip_ids=skip_ids)
+    scene = build_preset(preset, skip_ids=skip_ids)
 
     try:
         for i in range(frames):
@@ -99,7 +100,7 @@ def write_demo_video(output: Path, frames: int = 120, fps: int = 30) -> None:
     print(f"Wrote {output} ({frames} frames @ {fps}fps)")
 
 
-def write_demo_snapshot(output: Path, t: float = 1.5) -> None:
+def write_demo_snapshot(output: Path, t: float = 1.5, preset: str = "full") -> None:
     """Render a single end-to-end frame at simulated time t."""
     detector = MarkerDetector()
     world, pat = build_world(0.0)
@@ -109,7 +110,7 @@ def write_demo_snapshot(output: Path, t: float = 1.5) -> None:
     if cal is None:
         raise RuntimeError("synthetic calibration failed")
     skip_ids = set(pat.ids)
-    scene = default_scene(skip_ids=skip_ids)
+    scene = build_preset(preset, skip_ids=skip_ids)
     world, _ = build_world(t)
     cam_lit = world.render_camera(projector_image=None)
     markers = detector.detect(cam_lit)

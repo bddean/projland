@@ -50,10 +50,12 @@ def main(argv: list[str] | None = None) -> int:
     p_demo.add_argument("-o", "--output", default="demo.mp4")
     p_demo.add_argument("--frames", type=int, default=120)
     p_demo.add_argument("--fps", type=int, default=30)
+    p_demo.add_argument("--preset", default="full", choices=sorted(PRESETS))
 
     p_snap = sub.add_parser("snapshot", help="Render one synthetic demo frame as PNG")
     p_snap.add_argument("-o", "--output", default="snapshot.png")
     p_snap.add_argument("--t", type=float, default=1.5)
+    p_snap.add_argument("--preset", default="full", choices=sorted(PRESETS))
 
     p_test = sub.add_parser(
         "test-image",
@@ -102,13 +104,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "demo":
         from projland.demo_video import write_demo_video
 
-        write_demo_video(Path(args.output), frames=args.frames, fps=args.fps)
+        write_demo_video(
+            Path(args.output), frames=args.frames, fps=args.fps, preset=args.preset
+        )
         return 0
 
     if args.cmd == "snapshot":
         from projland.demo_video import write_demo_snapshot
 
-        write_demo_snapshot(Path(args.output), t=args.t)
+        write_demo_snapshot(Path(args.output), t=args.t, preset=args.preset)
         return 0
 
     if args.cmd == "test-image":
