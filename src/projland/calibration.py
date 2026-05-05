@@ -96,6 +96,21 @@ def _apply_homography(H: np.ndarray, points: np.ndarray) -> np.ndarray:
     return out.astype(np.float32)
 
 
+def identity_calibration(camera_size: tuple[int, int]) -> "Calibration":
+    """A pass-through calibration: projector space *is* camera space.
+
+    Useful for the preview/no-projector mode where we composite effects on
+    top of the camera feed and show it in a window.
+    """
+    eye = np.eye(3, dtype=np.float64)
+    return Calibration(
+        projector_to_camera=eye,
+        camera_to_projector=eye,
+        projector_size=camera_size,
+        camera_size=camera_size,
+    )
+
+
 def solve_calibration(
     pattern: CalibrationPattern,
     observed: list[Marker],

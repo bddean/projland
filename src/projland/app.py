@@ -8,9 +8,16 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from projland.calibration import CALIBRATION_IDS, Calibration, CalibrationPattern, solve_calibration
+from projland.calibration import (
+    CALIBRATION_IDS,
+    Calibration,
+    CalibrationPattern,
+    identity_calibration,
+    solve_calibration,
+)
 from projland.markers import MarkerDetector
 from projland.render import Renderer, Scene, default_scene
+from projland.tracking import MarkerSmoother
 
 
 PROJECTOR_WINDOW = "projland — projector"
@@ -26,6 +33,7 @@ class AppConfig:
     fullscreen: bool = True
     show_debug: bool = True
     recalibrate_every: float = 0.0  # seconds; 0 = only once
+    preview_mode: bool = False  # if True, skip projector — overlay on camera
 
 
 def _make_pattern(cfg: AppConfig) -> CalibrationPattern:
@@ -81,24 +89,37 @@ def run(cfg: AppConfig) -> int:
 
     detector = MarkerDetector()
     pattern = _make_pattern(cfg)
-    renderer = Renderer(projector_size=cfg.projector_size)
+    smoother = MarkerSmoother()
 
-    cv2.namedWindow(PROJECTOR_WINDOW, cv2.WINDOW_NORMAL)
-    if cfg.fullscreen:
-        cv2.setWindowProperty(PROJECTOR_WINDOW, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+    if cfg.preview_mode:
+        # Preview: skip projector, composite effects onto the camera frame.
+        ok, probe = cap.read()
+        if not ok:
+            print("Failed to read first frame from camera.")
+            cap.release()
+            return 3
+        cam_size = (probe.shape[1], probe.shape[0])
+        renderer = Renderer(projector_size=cam_size)
+        calibration = identity_calibration(cam_size)
+        skip_ids: set[int] = set()
+    else:
+        renderer = Renderer(projector_size=cfg.projector_size)
+        cv2.namedWindow(PROJECTOR_WINDOW, cv2.WINDOW_NORMAL)
+        if cfg.fullscreen:
+            cv2.setWindowProperty(PROJECTOR_WINDOW, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        print("Calibrating — please hold still while the corners are detected…")
+        calibration = calibrate_with_camera(cap, detector, pattern, PROJECTOR_WINDOW)
+        if calibration is None:
+            print("Calibration failed. Aborting.")
+            cap.release()
+            cv2.destroyAllWindows()
+            return 3
+        print("Calibrated.")
+        skip_ids = set(pattern.ids)
+
     if cfg.show_debug:
         cv2.namedWindow(DEBUG_WINDOW, cv2.WINDOW_NORMAL)
 
-    print("Calibrating — please hold still while the corners are detected…")
-    calibration = calibrate_with_camera(cap, detector, pattern, PROJECTOR_WINDOW)
-    if calibration is None:
-        print("Calibration failed. Aborting.")
-        cap.release()
-        cv2.destroyAllWindows()
-        return 3
-    print("Calibrated.")
-
-    skip_ids = set(pattern.ids)  # don't decorate calibration markers themselves
     scene: Scene = default_scene(skip_ids=skip_ids)
 
     last_cal_t = time.time()
@@ -109,10 +130,16 @@ def run(cfg: AppConfig) -> int:
             if not ok:
                 continue
             markers = detector.detect(frame)
+            markers = smoother.update(markers)
             t = time.time() - t0
             content_markers = [m for m in markers if m.id not in skip_ids]
             projector_img = renderer.render(scene, content_markers, calibration, t=t)
-            cv2.imshow(PROJECTOR_WINDOW, projector_img)
+            if cfg.preview_mode:
+                # composite projector_img on top of the camera frame
+                composed = cv2.add(frame, projector_img)
+                cv2.imshow(PROJECTOR_WINDOW if False else "projland — preview", composed)
+            else:
+                cv2.imshow(PROJECTOR_WINDOW, projector_img)
 
             if cfg.show_debug:
                 debug = frame.copy()

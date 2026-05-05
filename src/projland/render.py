@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from projland.calibration import Calibration
+from projland.letters import ARCUO_TO_LETTER
 from projland.markers import Marker
 
 
@@ -136,18 +137,29 @@ class IdLabel:
 
 @dataclass
 class Constellations:
-    """Connect every pair of markers with a colored line."""
+    """Connect markers with a colored line.
+
+    If `max_distance_px` is set, only connect markers whose centers (in
+    projector space) are within that distance — handy when you have many
+    markers and don't want a hairball.
+    """
 
     thickness: int = 2
+    max_distance_px: float | None = None
     skip_ids: set[int] = field(default_factory=set)
 
     def draw(self, canvas, markers, cal, t):
         active = [m for m in markers if m.id not in self.skip_ids]
+        centers = [marker_center_in_projector(m, cal) for m in active]
         for i, a in enumerate(active):
-            ca = marker_center_in_projector(a, cal)
-            for b in active[i + 1 :]:
-                cb = marker_center_in_projector(b, cal)
-                color = color_for_id((a.id + b.id) % 256)
+            ca = centers[i]
+            for j in range(i + 1, len(active)):
+                cb = centers[j]
+                if self.max_distance_px is not None:
+                    dist = float(np.linalg.norm(ca - cb))
+                    if dist > self.max_distance_px:
+                        continue
+                color = color_for_id((a.id + active[j].id) % 256)
                 cv2.line(
                     canvas,
                     (int(ca[0]), int(ca[1])),
@@ -156,6 +168,128 @@ class Constellations:
                     self.thickness,
                     cv2.LINE_AA,
                 )
+
+
+@dataclass
+class LetterLabel:
+    """If a marker has a known letter mapping, render that letter above it."""
+
+    offset: tuple[int, int] = (0, -50)
+    font_scale: float = 1.6
+    thickness: int = 3
+    skip_ids: set[int] = field(default_factory=set)
+
+    def draw(self, canvas, markers, cal, t):
+        for m in markers:
+            if m.id in self.skip_ids:
+                continue
+            letter = ARCUO_TO_LETTER.get(m.id)
+            if letter is None:
+                continue
+            center = marker_center_in_projector(m, cal)
+            x = int(center[0]) + self.offset[0]
+            y = int(center[1]) + self.offset[1]
+            color = color_for_id(m.id)
+            cv2.putText(
+                canvas,
+                letter,
+                (x, y),
+                cv2.FONT_HERSHEY_DUPLEX,
+                self.font_scale,
+                color,
+                self.thickness,
+                cv2.LINE_AA,
+            )
+
+
+@dataclass
+class OrientationArrow:
+    """Draw an arrow from each marker's center along its top edge."""
+
+    length_scale: float = 1.4
+    thickness: int = 4
+    skip_ids: set[int] = field(default_factory=set)
+
+    def draw(self, canvas, markers, cal, t):
+        for m in markers:
+            if m.id in self.skip_ids:
+                continue
+            corners = marker_corners_in_projector(m, cal)
+            tl, tr, _, _ = corners
+            center = corners.mean(axis=0)
+            direction = (tr + tl) / 2 - center  # midpoint of top edge − center
+            # We actually want the arrow to point AWAY from the marker — flip
+            # so it points "up" relative to the marker's frame.
+            direction = -direction * self.length_scale
+            tip = center + direction
+            cv2.arrowedLine(
+                canvas,
+                (int(center[0]), int(center[1])),
+                (int(tip[0]), int(tip[1])),
+                color_for_id(m.id),
+                self.thickness,
+                cv2.LINE_AA,
+                tipLength=0.3,
+            )
+
+
+@dataclass
+class Trail:
+    """Per-id breadcrumb trail of recent center positions."""
+
+    length: int = 12
+    thickness: int = 3
+    skip_ids: set[int] = field(default_factory=set)
+    _history: dict[int, list[tuple[float, float]]] = field(default_factory=dict)
+
+    def draw(self, canvas, markers, cal, t):
+        seen = set()
+        for m in markers:
+            if m.id in self.skip_ids:
+                continue
+            seen.add(m.id)
+            center = marker_center_in_projector(m, cal)
+            hist = self._history.setdefault(m.id, [])
+            hist.append((float(center[0]), float(center[1])))
+            if len(hist) > self.length:
+                del hist[: len(hist) - self.length]
+            color = color_for_id(m.id)
+            for i in range(1, len(hist)):
+                # fade older segments
+                alpha = i / len(hist)
+                seg_color = tuple(int(c * alpha) for c in color)
+                cv2.line(
+                    canvas,
+                    (int(hist[i - 1][0]), int(hist[i - 1][1])),
+                    (int(hist[i][0]), int(hist[i][1])),
+                    seg_color,
+                    self.thickness,
+                    cv2.LINE_AA,
+                )
+        # decay trails for ids not seen this frame
+        for mid in list(self._history.keys()):
+            if mid not in seen:
+                self._history[mid] = self._history[mid][1:]
+                if not self._history[mid]:
+                    self._history.pop(mid)
+
+
+@dataclass
+class Glow:
+    """Apply a Gaussian blur over the rendered canvas, then add it back, to
+    give a bloom effect. Should be added LAST in a scene."""
+
+    kernel: int = 31
+    sigma: float = 9.0
+    weight: float = 0.7
+
+    def draw(self, canvas, markers, cal, t):
+        if self.kernel % 2 == 0:
+            self.kernel += 1
+        blurred = cv2.GaussianBlur(canvas, (self.kernel, self.kernel), self.sigma)
+        boost = (blurred.astype(np.float32) * self.weight).clip(0, 255).astype(np.uint8)
+        # saturate-add (no wraparound)
+        np.copyto(canvas, cv2.add(canvas, boost))
 
 
 @dataclass
@@ -198,9 +332,13 @@ def default_scene(skip_ids: set[int] | None = None) -> Scene:
     skip_ids = skip_ids or set()
     return Scene(
         effects=[
-            Constellations(skip_ids=skip_ids),
+            Trail(skip_ids=skip_ids),
+            Constellations(skip_ids=skip_ids, max_distance_px=600),
             Halo(skip_ids=skip_ids),
             Pulse(skip_ids=skip_ids),
-            IdLabel(skip_ids=skip_ids),
+            OrientationArrow(skip_ids=skip_ids),
+            LetterLabel(skip_ids=skip_ids),
+            IdLabel(skip_ids=skip_ids, offset=(0, 28), font_scale=0.5),
+            Glow(weight=0.35),
         ]
     )

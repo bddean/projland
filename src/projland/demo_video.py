@@ -97,3 +97,24 @@ def write_demo_video(output: Path, frames: int = 120, fps: int = 30) -> None:
     finally:
         writer.release()
     print(f"Wrote {output} ({frames} frames @ {fps}fps)")
+
+
+def write_demo_snapshot(output: Path, t: float = 1.5) -> None:
+    """Render a single end-to-end frame at simulated time t."""
+    detector = MarkerDetector()
+    world, pat = build_world(0.0)
+    renderer = Renderer(projector_size=world.projector_size)
+    cam_pre = world.render_camera(projector_image=None)
+    cal = solve_calibration(pat, detector.detect(cam_pre), world.camera_size)
+    if cal is None:
+        raise RuntimeError("synthetic calibration failed")
+    skip_ids = set(pat.ids)
+    scene = default_scene(skip_ids=skip_ids)
+    world, _ = build_world(t)
+    cam_lit = world.render_camera(projector_image=None)
+    markers = detector.detect(cam_lit)
+    content = [m for m in markers if m.id not in skip_ids]
+    proj_img = renderer.render(scene, content, cal, t=t)
+    cam_final = world.render_camera(projector_image=proj_img)
+    cv2.imwrite(str(output), cam_final)
+    print(f"Wrote {output}")

@@ -1,0 +1,24 @@
+name: ci
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Setup Python
+        run: uv python install 3.13
+      - name: Sync
+        run: uv sync --extra dev
+      - name: Tests
+        run: uv run pytest -v
+      - name: Smoke — render synthetic demo
+        run: uv run projland demo --frames 30 -o /tmp/demo.mp4
+      - name: Smoke — render calibration image
+        run: uv run projland calibration-image -o /tmp/cal.png

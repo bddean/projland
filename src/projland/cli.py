@@ -24,6 +24,11 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--no-fullscreen", action="store_true")
     p_run.add_argument("--no-debug", action="store_true")
     p_run.add_argument("--recalibrate-every", type=float, default=0.0)
+    p_run.add_argument(
+        "--preview",
+        action="store_true",
+        help="Skip projector — composite effects onto the camera feed instead",
+    )
 
     p_pat = sub.add_parser("calibration-image", help="Save the calibration image")
     p_pat.add_argument("--width", type=int, default=1280)
@@ -42,6 +47,10 @@ def main(argv: list[str] | None = None) -> int:
     p_demo.add_argument("--frames", type=int, default=120)
     p_demo.add_argument("--fps", type=int, default=30)
 
+    p_snap = sub.add_parser("snapshot", help="Render one synthetic demo frame as PNG")
+    p_snap.add_argument("-o", "--output", default="snapshot.png")
+    p_snap.add_argument("--t", type=float, default=1.5)
+
     args = parser.parse_args(argv)
 
     if args.cmd == "run":
@@ -51,6 +60,7 @@ def main(argv: list[str] | None = None) -> int:
             fullscreen=not args.no_fullscreen,
             show_debug=not args.no_debug,
             recalibrate_every=args.recalibrate_every,
+            preview_mode=args.preview,
         )
         return run(cfg)
 
@@ -76,6 +86,12 @@ def main(argv: list[str] | None = None) -> int:
         from projland.demo_video import write_demo_video
 
         write_demo_video(Path(args.output), frames=args.frames, fps=args.fps)
+        return 0
+
+    if args.cmd == "snapshot":
+        from projland.demo_video import write_demo_snapshot
+
+        write_demo_snapshot(Path(args.output), t=args.t)
         return 0
 
     return 1
