@@ -18,7 +18,8 @@ from projland.calibration import (
 from projland.events import MarkerEvents
 from projland.letters import ARCUO_TO_LETTER
 from projland.markers import MarkerDetector
-from projland.render import Renderer, Scene, default_scene
+from projland.presets import build as build_preset
+from projland.render import Renderer, Scene
 from projland.tracking import MarkerSmoother
 
 
@@ -36,6 +37,7 @@ class AppConfig:
     show_debug: bool = True
     recalibrate_every: float = 0.0  # seconds; 0 = only once
     preview_mode: bool = False  # if True, skip projector — overlay on camera
+    preset: str = "full"
 
 
 def _make_pattern(cfg: AppConfig) -> CalibrationPattern:
@@ -122,7 +124,7 @@ def run(cfg: AppConfig) -> int:
     if cfg.show_debug:
         cv2.namedWindow(DEBUG_WINDOW, cv2.WINDOW_NORMAL)
 
-    scene: Scene = default_scene(skip_ids=skip_ids)
+    scene: Scene = build_preset(cfg.preset, skip_ids=skip_ids)
 
     def _describe(m):
         letter = ARCUO_TO_LETTER.get(m.id)
@@ -149,9 +151,8 @@ def run(cfg: AppConfig) -> int:
             events.update(content_markers)
             projector_img = renderer.render(scene, content_markers, calibration, t=t)
             if cfg.preview_mode:
-                # composite projector_img on top of the camera frame
                 composed = cv2.add(frame, projector_img)
-                cv2.imshow(PROJECTOR_WINDOW if False else "projland — preview", composed)
+                cv2.imshow("projland — preview", composed)
             else:
                 cv2.imshow(PROJECTOR_WINDOW, projector_img)
 

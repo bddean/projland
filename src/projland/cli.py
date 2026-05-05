@@ -11,6 +11,7 @@ import cv2
 from projland.app import AppConfig, run
 from projland.calibration import CalibrationPattern
 from projland.markers import render_marker, DEFAULT_DICT
+from projland.presets import PRESETS
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -28,6 +29,9 @@ def main(argv: list[str] | None = None) -> int:
         "--preview",
         action="store_true",
         help="Skip projector — composite effects onto the camera feed instead",
+    )
+    p_run.add_argument(
+        "--preset", default="full", choices=sorted(PRESETS),
     )
 
     p_pat = sub.add_parser("calibration-image", help="Save the calibration image")
@@ -61,6 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_test.add_argument("input")
     p_test.add_argument("-o", "--output", default="test_out.png")
+    p_test.add_argument("--preset", default="full", choices=sorted(PRESETS))
 
     args = parser.parse_args(argv)
 
@@ -72,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
             show_debug=not args.no_debug,
             recalibrate_every=args.recalibrate_every,
             preview_mode=args.preview,
+            preset=args.preset,
         )
         return run(cfg)
 
@@ -108,7 +114,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "test-image":
         from projland.calibration import identity_calibration
         from projland.markers import MarkerDetector
-        from projland.render import Renderer, default_scene
+        from projland.presets import build as build_preset
+        from projland.render import Renderer
 
         img = cv2.imread(args.input)
         if img is None:
@@ -117,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
         h, w = img.shape[:2]
         markers = MarkerDetector().detect(img)
         cal = identity_calibration((w, h))
-        scene = default_scene()
+        scene = build_preset(args.preset)
         proj = Renderer(projector_size=(w, h)).render(scene, markers, cal)
         composed = cv2.add(img, proj)
         cv2.imwrite(args.output, composed)
