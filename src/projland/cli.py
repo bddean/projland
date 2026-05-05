@@ -14,12 +14,61 @@ from projland.markers import render_marker, DEFAULT_DICT
 from projland.presets import PRESETS
 
 
+def _probe_camera(source: int | str) -> tuple[bool, tuple[int, int] | None]:
+    """Open `source`, try one read; return (ok, (w, h) or None)."""
+    cap = cv2.VideoCapture(source)
+    try:
+        if not cap.isOpened():
+            return False, None
+        ok, frame = cap.read()
+        if not ok or frame is None:
+            return False, None
+        h, w = frame.shape[:2]
+        return True, (w, h)
+    finally:
+        cap.release()
+
+
+def _list_cameras(max_index: int, urls: list[str]) -> int:
+    print(f"Probing USB indices 0..{max_index - 1}…")
+    found = 0
+    for i in range(max_index):
+        ok, size = _probe_camera(i)
+        if ok:
+            found += 1
+            print(f"  [{i}] OK — {size[0]}x{size[1]}")
+        else:
+            print(f"  [{i}] —")
+    for url in urls:
+        ok, size = _probe_camera(url)
+        if ok:
+            found += 1
+            print(f"  [{url}] OK — {size[0]}x{size[1]}")
+        else:
+            print(f"  [{url}] could not open")
+    print(f"{found} working source(s).")
+    return 0 if found else 1
+
+
+def _camera_arg(value: str) -> int | str:
+    """Parse --camera: int → USB device index; otherwise pass through as URL/path."""
+    try:
+        return int(value)
+    except ValueError:
+        return value
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="projland", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_run = sub.add_parser("run", help="Run the live projector + camera app")
-    p_run.add_argument("--camera", type=int, default=0)
+    p_run.add_argument(
+        "--camera",
+        type=_camera_arg,
+        default=0,
+        help="USB index (e.g. 0, 1) OR a stream URL (e.g. http://192.168.1.245:8080/video)",
+    )
     p_run.add_argument("--projector-width", type=int, default=1280)
     p_run.add_argument("--projector-height", type=int, default=800)
     p_run.add_argument("--no-fullscreen", action="store_true")
@@ -56,6 +105,19 @@ def main(argv: list[str] | None = None) -> int:
     p_snap.add_argument("-o", "--output", default="snapshot.png")
     p_snap.add_argument("--t", type=float, default=1.5)
     p_snap.add_argument("--preset", default="full", choices=sorted(PRESETS))
+
+    p_list = sub.add_parser(
+        "list-cameras",
+        help="Probe USB camera indices and report which open. Optionally include a URL too.",
+    )
+    p_list.add_argument(
+        "--max", type=int, default=5,
+        help="Highest USB index to try (default 5)",
+    )
+    p_list.add_argument(
+        "--url", action="append", default=[],
+        help="Also probe this stream URL. Repeatable.",
+    )
 
     p_test = sub.add_parser(
         "test-image",
@@ -114,6 +176,9 @@ def main(argv: list[str] | None = None) -> int:
 
         write_demo_snapshot(Path(args.output), t=args.t, preset=args.preset)
         return 0
+
+    if args.cmd == "list-cameras":
+        return _list_cameras(args.max, args.url)
 
     if args.cmd == "test-image":
         from projland.calibration import identity_calibration

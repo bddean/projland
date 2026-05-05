@@ -57,6 +57,24 @@ Effects are composited directly on the image (identity calibration). Example:
 | --- | --- |
 | ![](docs/test_input.png) | ![](docs/test_output.png) |
 
+## Pick a camera
+
+`--camera` accepts either a USB index or a stream URL:
+
+```bash
+uv run projland run --camera 1
+uv run projland run --camera http://192.168.1.245:8080/video
+```
+
+To see what's available:
+
+```bash
+uv run projland list-cameras --max 5
+uv run projland list-cameras --url http://192.168.1.245:8080/video
+```
+
+(macOS will prompt for camera permission the first time.)
+
 ## Live app
 
 Plug in a webcam and a projector (treat the projector as a second display).

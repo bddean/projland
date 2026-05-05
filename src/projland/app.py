@@ -29,7 +29,7 @@ DEBUG_WINDOW = "projland — camera debug"
 
 @dataclass
 class AppConfig:
-    camera_index: int = 0
+    camera_index: int | str = 0  # int (USB index) or str (URL/file path)
     projector_size: tuple[int, int] = (1280, 800)
     calibration_marker_px: int = 180
     calibration_margin_px: int = 80
