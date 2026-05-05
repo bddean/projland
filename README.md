@@ -1,5 +1,13 @@
 # projland
 
+[![ci](https://github.com/bddean/projland/actions/workflows/ci.yml/badge.svg)](https://github.com/bddean/projland/actions/workflows/ci.yml)
+
+![demo](docs/demo.png)
+
+*A frame from `projland snapshot`: synthetic camera observes 4 calibration
+ArUco corners (untouched) plus 4 content markers wrapped in projected halos,
+constellations, letter labels, and glow.*
+
 Dynamic-land-style projector + webcam AR. Point a webcam and a projector at the
 same flat surface; place printed ArUco markers on it; projland decorates them
 with halos, labels, pulses, and constellations.

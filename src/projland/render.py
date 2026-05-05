@@ -12,6 +12,7 @@ import numpy as np
 from projland.calibration import Calibration
 from projland.letters import ARCUO_TO_LETTER
 from projland.markers import Marker
+from projland.spelling import group_words
 
 
 # Pleasant high-saturation palette (BGR).
@@ -275,6 +276,51 @@ class Trail:
 
 
 @dataclass
+class SpelledWord:
+    """If two or more letter markers are roughly aligned in a row, render
+    the spelled word above them."""
+
+    font_scale: float = 2.2
+    thickness: int = 4
+    min_letters: int = 2
+    color: tuple[int, int, int] = (255, 255, 255)
+    skip_ids: set[int] = field(default_factory=set)
+
+    def draw(self, canvas, markers, cal, t):
+        active = [m for m in markers if m.id not in self.skip_ids]
+        words = group_words(active)
+        for w in words:
+            if len(w.text) < self.min_letters:
+                continue
+            # Compute centroid in projector space
+            centers = [marker_center_in_projector(m, cal) for m in w.markers]
+            cx = float(np.mean([c[0] for c in centers]))
+            cy = float(np.mean([c[1] for c in centers]))
+            # Place text above the row
+            sizes = [
+                float(np.linalg.norm(marker_corners_in_projector(m, cal)[1] -
+                                     marker_corners_in_projector(m, cal)[0]))
+                for m in w.markers
+            ]
+            avg_size = float(np.mean(sizes))
+            tx = int(cx)
+            ty = int(cy - avg_size * 1.4)
+            (tw, th), _ = cv2.getTextSize(
+                w.text, cv2.FONT_HERSHEY_DUPLEX, self.font_scale, self.thickness
+            )
+            cv2.putText(
+                canvas,
+                w.text,
+                (tx - tw // 2, ty),
+                cv2.FONT_HERSHEY_DUPLEX,
+                self.font_scale,
+                self.color,
+                self.thickness,
+                cv2.LINE_AA,
+            )
+
+
+@dataclass
 class Glow:
     """Apply a Gaussian blur over the rendered canvas, then add it back, to
     give a bloom effect. Should be added LAST in a scene."""
@@ -338,6 +384,7 @@ def default_scene(skip_ids: set[int] | None = None) -> Scene:
             Pulse(skip_ids=skip_ids),
             OrientationArrow(skip_ids=skip_ids),
             LetterLabel(skip_ids=skip_ids),
+            SpelledWord(skip_ids=skip_ids),
             IdLabel(skip_ids=skip_ids, offset=(0, 28), font_scale=0.5),
             Glow(weight=0.35),
         ]
