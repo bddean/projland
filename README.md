@@ -42,6 +42,21 @@ calibrates against four corner fiducials and projects decorations around the
 content markers; the synthetic camera observes the lit-up surface and that's
 the video frame.
 
+## Try effects on your own image (no hardware)
+
+If you have a photo of some printed ArUco markers from
+`cv2.aruco.DICT_ARUCO_ORIGINAL`, run:
+
+```bash
+uv run projland test-image input.png -o output.png
+```
+
+Effects are composited directly on the image (identity calibration). Example:
+
+| input | output |
+| --- | --- |
+| ![](docs/test_input.png) | ![](docs/test_output.png) |
+
 ## Live app
 
 Plug in a webcam and a projector (treat the projector as a second display).

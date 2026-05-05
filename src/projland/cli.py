@@ -51,6 +51,17 @@ def main(argv: list[str] | None = None) -> int:
     p_snap.add_argument("-o", "--output", default="snapshot.png")
     p_snap.add_argument("--t", type=float, default=1.5)
 
+    p_test = sub.add_parser(
+        "test-image",
+        help=(
+            "Run detection+render on a static image (treated as the camera "
+            "frame). Effects are composited onto a copy of the image using "
+            "the identity calibration."
+        ),
+    )
+    p_test.add_argument("input")
+    p_test.add_argument("-o", "--output", default="test_out.png")
+
     args = parser.parse_args(argv)
 
     if args.cmd == "run":
@@ -92,6 +103,28 @@ def main(argv: list[str] | None = None) -> int:
         from projland.demo_video import write_demo_snapshot
 
         write_demo_snapshot(Path(args.output), t=args.t)
+        return 0
+
+    if args.cmd == "test-image":
+        from projland.calibration import identity_calibration
+        from projland.markers import MarkerDetector
+        from projland.render import Renderer, default_scene
+
+        img = cv2.imread(args.input)
+        if img is None:
+            print(f"Could not read {args.input}")
+            return 2
+        h, w = img.shape[:2]
+        markers = MarkerDetector().detect(img)
+        cal = identity_calibration((w, h))
+        scene = default_scene()
+        proj = Renderer(projector_size=(w, h)).render(scene, markers, cal)
+        composed = cv2.add(img, proj)
+        cv2.imwrite(args.output, composed)
+        print(
+            f"Detected {len(markers)} markers "
+            f"({sorted(m.id for m in markers)}); wrote {args.output}"
+        )
         return 0
 
     return 1
