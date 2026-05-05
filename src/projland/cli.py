@@ -82,6 +82,15 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument(
         "--preset", default="full", choices=sorted(PRESETS),
     )
+    p_run.add_argument(
+        "--projector",
+        default="auto",
+        help=(
+            "macOS only. 'auto' (default) places the projector window on the "
+            "single non-main display if there is one. 'main' or an integer "
+            "display id selects explicitly. 'off' disables placement."
+        ),
+    )
 
     p_pat = sub.add_parser("calibration-image", help="Save the calibration image")
     p_pat.add_argument("--width", type=int, default=1280)
@@ -105,6 +114,11 @@ def main(argv: list[str] | None = None) -> int:
     p_snap.add_argument("-o", "--output", default="snapshot.png")
     p_snap.add_argument("--t", type=float, default=1.5)
     p_snap.add_argument("--preset", default="full", choices=sorted(PRESETS))
+
+    p_disp = sub.add_parser(
+        "displays",
+        help="List connected displays (macOS only). Useful for picking a projector.",
+    )
 
     p_list = sub.add_parser(
         "list-cameras",
@@ -142,6 +156,7 @@ def main(argv: list[str] | None = None) -> int:
             recalibrate_every=args.recalibrate_every,
             preview_mode=args.preview,
             preset=args.preset,
+            projector=args.projector,
         )
         return run(cfg)
 
@@ -175,6 +190,20 @@ def main(argv: list[str] | None = None) -> int:
         from projland.demo_video import write_demo_snapshot
 
         write_demo_snapshot(Path(args.output), t=args.t, preset=args.preset)
+        return 0
+
+    if args.cmd == "displays":
+        from projland.displays import list_displays, pick_projector
+
+        ds = list_displays()
+        if not ds:
+            print("No displays detected (macOS-only; install with --extra macos).")
+            return 1
+        for d in ds:
+            print(d.label)
+        picked = pick_projector(ds)
+        if picked is not None:
+            print(f"projector → {picked.label}")
         return 0
 
     if args.cmd == "list-cameras":

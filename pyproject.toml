@@ -16,6 +16,9 @@ dependencies = [
 dev = [
     "pytest>=8",
 ]
+macos = [
+    "pyobjc-framework-Quartz>=10",
+]
 
 [project.scripts]
 projland = "projland.cli:main"

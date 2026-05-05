@@ -75,6 +75,28 @@ uv run projland list-cameras --url http://192.168.1.245:8080/video
 
 (macOS will prompt for camera permission the first time.)
 
+## Pick a projector display (macOS)
+
+Install the macOS extra once so projland can read display info:
+
+```bash
+uv sync --extra dev --extra macos
+```
+
+Then:
+
+```bash
+uv run projland displays                          # list & guess which is the projector
+uv run projland run                               # default: --projector auto
+uv run projland run --projector 3                 # explicit display id
+uv run projland run --projector off               # disable; drag window yourself
+```
+
+`auto` (the default) flags built-in vs external via Quartz's
+`CGDisplayIsBuiltin` and picks the single non-built-in display. If you've got
+the projector *and* an external monitor attached, it falls back to "the
+non-main external".
+
 ## Live app
 
 Plug in a webcam and a projector (treat the projector as a second display).

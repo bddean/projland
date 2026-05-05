@@ -27,6 +27,42 @@ PROJECTOR_WINDOW = "projland — projector"
 DEBUG_WINDOW = "projland — camera debug"
 
 
+def _place_projector_window(window: str, cfg: "AppConfig") -> None:
+    """Move the projector window onto the chosen display before fullscreen."""
+    if cfg.projector == "off":
+        return
+    from projland.displays import list_displays, pick_projector
+
+    displays = list_displays()
+    if not displays:
+        return  # not on macOS or Quartz unavailable; let user drag manually
+    target = None
+    if cfg.projector == "auto":
+        target = pick_projector(displays)
+        if target is None:
+            print(
+                "projland: couldn't auto-pick a projector display "
+                f"(have {len(displays)}); drag the window manually or pass --projector <id>"
+            )
+            return
+    elif cfg.projector == "main":
+        target = next((d for d in displays if d.is_main), None)
+    else:
+        try:
+            wanted = int(cfg.projector)
+        except ValueError:
+            print(f"projland: --projector must be auto/off/main/<id>, got {cfg.projector!r}")
+            return
+        target = next((d for d in displays if d.id == wanted), None)
+        if target is None:
+            print(f"projland: no display with id {wanted}")
+            return
+
+    print(f"projland: placing projector window on {target.label}")
+    cv2.moveWindow(window, target.x, target.y)
+    cv2.resizeWindow(window, target.width, target.height)
+
+
 @dataclass
 class AppConfig:
     camera_index: int | str = 0  # int (USB index) or str (URL/file path)
@@ -38,6 +74,7 @@ class AppConfig:
     recalibrate_every: float = 0.0  # seconds; 0 = only once
     preview_mode: bool = False  # if True, skip projector — overlay on camera
     preset: str = "full"
+    projector: str = "auto"  # "auto" | "off" | "main" | str(display_id)
 
 
 def _make_pattern(cfg: AppConfig) -> CalibrationPattern:
@@ -109,6 +146,7 @@ def run(cfg: AppConfig) -> int:
     else:
         renderer = Renderer(projector_size=cfg.projector_size)
         cv2.namedWindow(PROJECTOR_WINDOW, cv2.WINDOW_NORMAL)
+        _place_projector_window(PROJECTOR_WINDOW, cfg)
         if cfg.fullscreen:
             cv2.setWindowProperty(PROJECTOR_WINDOW, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         print("Calibrating — please hold still while the corners are detected…")
